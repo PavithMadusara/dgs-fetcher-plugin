@@ -2,8 +2,12 @@ package com.aupma.codegen.graphql;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
-import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.artifacts.ConfigurationContainer;
 import org.gradle.api.tasks.JavaExec;
+import org.gradle.api.tasks.SourceSet;
+import org.gradle.api.tasks.SourceSetContainer;
+
+import java.util.List;
 
 /**
  * A Gradle plugin that generates Netflix DGS Framework data fetcher interfaces from GraphQL schema files.
@@ -42,26 +46,41 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
         project.afterEvaluate(_ -> {
             DgsFetcherGenExtension config = project.getExtensions().getByType(DgsFetcherGenExtension.class);
 
+            // Register generator source set
+            SourceSetContainer sourceSets = project.getExtensions().getByType(SourceSetContainer.class);
+            SourceSet generatorSourceSet = sourceSets.create("generator");
+
+            ConfigurationContainer configurations = project.getConfigurations();
+            configurations.getByName("generatorImplementation")
+                    .extendsFrom(configurations.getByName("implementation"));
+
+            // Add a task using a generator classpath
             project.getTasks().register(
                     "generateDgsFetchers", JavaExec.class, task -> {
                         task.setGroup("dgsFetcherGen");
                         task.setDescription("Generate DGS fetcher interfaces from GraphQL schema files");
 
                         task.getMainClass().set("com.aupma.codegen.graphql.GraphQLToDgsProcessor");
-                        JavaPluginExtension javaPluginExtension = project.getExtensions()
-                                .findByType(JavaPluginExtension.class);
-                        assert javaPluginExtension != null;
-                        task.setClasspath(javaPluginExtension.getSourceSets().getByName("main").getRuntimeClasspath());
+                        task.setClasspath(generatorSourceSet.getRuntimeClasspath());
 
-                        task.getArgumentProviders().add(() -> java.util.List.of(
+                        task.getArgumentProviders().add(() -> List.of(
                                 "--schemaDir=" + config.getSchemaDir(),
                                 "--outputDir=" + config.getOutputDir(),
                                 "--packageName=" + config.getPackageName()
                         ));
                     }
             );
-            project.getTasks().named("build").configure(buildTask -> buildTask.finalizedBy("generateDgsFetchers"));
+
+            // Wire task before compileJava instead of build
+            project.getTasks().named("compileJava").configure(compileTask ->
+                    compileTask.dependsOn("generateDgsFetchers")
+            );
+
+            // Also add generated dir to the main sourceSet
+            SourceSet mainSourceSet = sourceSets.getByName("main");
+            mainSourceSet.getJava().srcDir(config.getOutputDir());
         });
     }
+
 }
 
