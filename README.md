@@ -15,6 +15,7 @@ An extension for Netflix DGS Codegen that generates interfaces for GraphQL queri
 - Generates proper method signatures with correct return types
 - Adds appropriate DGS annotations
 - Properly maps GraphQL types to Java types
+- Supports jakarta Validations 
 
 ## Getting Started
 
@@ -45,13 +46,37 @@ dgsFetcherGen {
 
 For the best experience with the IntelliJ DGS plugin and code navigation, it's recommended to:
 
-1. Create a base.graphqls file with empty type declarations:
+1. Create a base.graphqls file (with empty type declarations):
    ```graphql
    type Query {
    }
 
    type Mutation {
    }
+   
+   #directive @NotNull on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION - Use Graphql "!"
+   
+   directive @AssertFalse on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @AssertTrue on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @DecimalMax(value: String!, inclusive: Boolean = true) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @DecimalMin(value: String!, inclusive: Boolean = true) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Digits(integer: Int!, fraction: Int!) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Email on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Future on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @FutureOrPresent on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Max(value: Int!) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Min(value: Int!) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Negative on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @NegativeOrZero on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @NotBlank on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @NotEmpty on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Null on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Past on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @PastOrPresent on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Pattern(regexp: String!) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Positive on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @PositiveOrZero on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
+   directive @Size(min: Int = 0, max: Int = 2147483647) on INPUT_FIELD_DEFINITION | ARGUMENT_DEFINITION
    ```
 
 2. In other schema files, use extension syntax:

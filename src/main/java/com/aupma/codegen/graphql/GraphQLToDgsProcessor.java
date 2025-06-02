@@ -103,13 +103,57 @@ public class GraphQLToDgsProcessor {
         }
     }
 
-    /**
-     * Generates a method specification for a GraphQL field.
-     *
-     * @param field      The GraphQL field definition
-     * @param annotation The DGS annotation to apply ("DgsQuery" or "DgsMutation")
-     * @return A JavaPoet MethodSpec representing the generated method
-     */
+    private static final Map<String, String> directiveToAnnotation = Map.ofEntries(
+            Map.entry("AssertFalse", "AssertFalse"),
+            Map.entry("AssertTrue", "AssertTrue"),
+            Map.entry("DecimalMax", "DecimalMax"),
+            Map.entry("DecimalMin", "DecimalMin"),
+            Map.entry("Digits", "Digits"),
+            Map.entry("Email", "Email"),
+            Map.entry("Future", "Future"),
+            Map.entry("FutureOrPresent", "FutureOrPresent"),
+            Map.entry("Max", "Max"),
+            Map.entry("Min", "Min"),
+            Map.entry("Negative", "Negative"),
+            Map.entry("NegativeOrZero", "NegativeOrZero"),
+            Map.entry("NotBlank", "NotBlank"),
+            Map.entry("NotEmpty", "NotEmpty"),
+            Map.entry("Null", "Null"),
+            Map.entry("Past", "Past"),
+            Map.entry("PastOrPresent", "PastOrPresent"),
+            Map.entry("Pattern", "Pattern"),
+            Map.entry("Positive", "Positive"),
+            Map.entry("PositiveOrZero", "PositiveOrZero"),
+            Map.entry("Size", "Size")
+    );
+
+    private static void addValidationAnnotations(ParameterSpec.Builder paramBuilder, List<Directive> directives) {
+        for (Directive directive : directives) {
+            String dirName = directive.getName();
+            if (!directiveToAnnotation.containsKey(dirName)) continue;
+            String annName = directiveToAnnotation.get(dirName);
+            ClassName annClass = ClassName.get("jakarta.validation.constraints", annName);
+
+            AnnotationSpec.Builder annBuilder = AnnotationSpec.builder(annClass);
+
+            // Handle annotation parameters from directive arguments
+            for (Argument arg : directive.getArguments()) {
+                String paramName = arg.getName();
+                Value<?> val = arg.getValue();
+                // Support common types: StringValue, IntValue, BooleanValue
+                if (val instanceof StringValue s) {
+                    annBuilder.addMember(paramName, "$S", s.getValue());
+                } else if (val instanceof IntValue i) {
+                    annBuilder.addMember(paramName, "$L", i.getValue());
+                } else if (val instanceof BooleanValue b) {
+                    annBuilder.addMember(paramName, "$L", b.isValue());
+                }
+            }
+
+            paramBuilder.addAnnotation(annBuilder.build());
+        }
+    }
+
     private static MethodSpec generateMethod(FieldDefinition field, String annotation) {
         MethodSpec.Builder builder = MethodSpec.methodBuilder(field.getName())
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
@@ -119,15 +163,24 @@ public class GraphQLToDgsProcessor {
         if (inputValueDefs != null && !inputValueDefs.isEmpty()) {
             for (InputValueDefinition input : inputValueDefs) {
                 String argName = input.getName();
-                String rawType = unwrapTypeName(input.getType());
+                Type<?> gqlType = input.getType();
+                String rawType = unwrapTypeName(gqlType);
 
                 TypeName type = isPrimitive(rawType)
                         ? mapPrimitive(rawType)
                         : ClassName.get("com.netflix.dgs.codegen.generated.types", rawType);
 
-                builder.addParameter(ParameterSpec.builder(type, argName)
-                        .addAnnotation(ClassName.get("com.netflix.graphql.dgs", "InputArgument"))
-                        .build());
+                ParameterSpec.Builder paramBuilder = ParameterSpec.builder(type, argName);
+
+                if (gqlType instanceof NonNullType) {
+                    paramBuilder.addAnnotation(ClassName.get("jakarta.validation.constraints", "NotNull"));
+                }
+
+                addValidationAnnotations(paramBuilder, input.getDirectives());
+
+                paramBuilder.addAnnotation(ClassName.get("com.netflix.graphql.dgs", "InputArgument"));
+
+                builder.addParameter(paramBuilder.build());
             }
         }
 
