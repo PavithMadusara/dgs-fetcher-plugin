@@ -1,4 +1,4 @@
-package com.aupma.codegen.graphql;
+package com.aupma.codegen.dgs;
 
 /**
  * Extension for configuring the GraphQL to DGS fetcher generation.
@@ -12,6 +12,8 @@ public class DgsFetcherGenExtension {
     private String outputDir = "build/generated/sources/dgs-codegen";
 
     private String packageName = "com.aupma.codegen.dgs";
+
+    private String[] excludeFiles = {"codegen.graphqls"};
 
     public String getSchemaDir() {
         return schemaDir;
@@ -35,5 +37,13 @@ public class DgsFetcherGenExtension {
 
     public void setPackageName(String packageName) {
         this.packageName = packageName;
+    }
+
+    public String[] getExcludeFiles() {
+        return excludeFiles;
+    }
+
+    public void setExcludeFiles(String[] excludeFiles) {
+        this.excludeFiles = excludeFiles;
     }
 }

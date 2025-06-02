@@ -1,4 +1,4 @@
-package com.aupma.codegen.graphql;
+package com.aupma.codegen.dgs;
 
 import com.palantir.javapoet.*;
 import com.palantir.javapoet.TypeName;
@@ -29,6 +29,18 @@ public class GraphQLToDgsProcessor {
         String schemaDir = config.get("schemaDir");
         String outputDir = config.get("outputDir");
         basePackage = config.get("packageName");
+        String excludeFilesStr = config.get("excludeFiles");
+        Set<String> excludeSet;
+
+        if (excludeFilesStr != null && !excludeFilesStr.isEmpty()) {
+            excludeSet = Arrays.stream(excludeFilesStr.split(","))
+                .map(String::trim)
+                .collect(Collectors.toSet());
+        } else {
+            excludeSet = Set.of("codegen.graphqls");
+        }
+
+        System.out.println("Excluding files: " + excludeSet);
 
         File schemaDirFile = new File(schemaDir);
         if (!schemaDirFile.exists() || !schemaDirFile.isDirectory()) {
@@ -39,6 +51,7 @@ public class GraphQLToDgsProcessor {
         Files.walk(Paths.get(schemaDir))
                 .filter(Files::isRegularFile)
                 .filter(f -> f.toString().endsWith(".graphqls"))
+                .filter(f -> !excludeSet.contains(f.getFileName().toString()))
                 .forEach(f -> processFile(f.toFile(), outputDir));
     }
 

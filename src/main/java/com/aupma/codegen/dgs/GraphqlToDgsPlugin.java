@@ -1,4 +1,4 @@
-package com.aupma.codegen.graphql;
+package com.aupma.codegen.dgs;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
@@ -8,6 +8,7 @@ import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.SourceSetContainer;
 
 import java.util.List;
+import java.util.ArrayList;
 
 public class GraphqlToDgsPlugin implements Plugin<Project> {
     @Override
@@ -20,7 +21,7 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
                     task.setGroup("dgsCodegen");
                     task.setDescription("Create a base GraphQL schema file");
 
-                    task.doLast(t -> {
+                    task.doLast(_ -> {
                         DgsFetcherGenExtension config = project.getExtensions().getByType(DgsFetcherGenExtension.class);
                         String schemaDir = config.getSchemaDir();
                         java.io.File schemaDirFile = new java.io.File(schemaDir);
@@ -29,15 +30,15 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
                             schemaDirFile.mkdirs();
                         }
 
-                        java.io.File baseSchemaFile = new java.io.File(schemaDirFile, "dgs.graphqls");
+                        java.io.File baseSchemaFile = new java.io.File(schemaDirFile, "codegen.graphqls");
 
                         if (!baseSchemaFile.exists()) {
                             try {
                                 // Read template from resources
                                 java.io.InputStream templateStream = getClass().getClassLoader()
-                                        .getResourceAsStream("dgs.graphqls");
+                                        .getResourceAsStream("codegen.graphqls.template");
                                 if (templateStream == null) {
-                                    project.getLogger().error("Could not find template file: dgs.graphqls");
+                                    project.getLogger().error("Could not find template file: codegen.graphqls");
                                     return;
                                 }
 
@@ -81,14 +82,21 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
                         task.setGroup("dgsCodegen");
                         task.setDescription("Generate DGS java code from GraphQL schema files");
 
-                        task.getMainClass().set("com.aupma.codegen.graphql.GraphQLToDgsProcessor");
+                        task.getMainClass().set("com.aupma.codegen.dgs.GraphQLToDgsProcessor");
                         task.setClasspath(generatorSourceSet.getRuntimeClasspath());
 
-                        task.getArgumentProviders().add(() -> List.of(
-                                "--schemaDir=" + config.getSchemaDir(),
-                                "--outputDir=" + config.getOutputDir(),
-                                "--packageName=" + config.getPackageName()
-                        ));
+                        task.getArgumentProviders().add(() -> {
+                            List<String> args = new ArrayList<>();
+                            args.add("--schemaDir=" + config.getSchemaDir());
+                            args.add("--outputDir=" + config.getOutputDir());
+                            args.add("--packageName=" + config.getPackageName());
+
+                            if (config.getExcludeFiles() != null && config.getExcludeFiles().length > 0) {
+                                args.add("--excludeFiles=" + String.join(",", config.getExcludeFiles()));
+                            }
+
+                            return args;
+                        });
                     }
             );
 
