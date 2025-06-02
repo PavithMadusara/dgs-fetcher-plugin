@@ -1,15 +1,5 @@
 package com.aupma.codegen.graphql;
 
-/**
- * A processor that converts GraphQL schema files (*.graphqls) into Netflix DGS Framework
- * data fetcher interfaces. The processor handles both Query and Mutation types from GraphQL schemas.
- *
- * <p>This tool generates abstract interface definitions with appropriate DGS annotations that
- * developers can implement to create GraphQL resolvers compatible with the Netflix DGS Framework.</p>
- *
- * <p>Usage: java GraphQLToDgsProcessor --schemaDir=/path/to/schemas --outputDir=/path/to/output --packageName=com.example.package</p>
- */
-
 import com.palantir.javapoet.*;
 import com.palantir.javapoet.TypeName;
 import graphql.language.*;
@@ -27,17 +17,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 public class GraphQLToDgsProcessor {
-    /**
-     * Entry point for the GraphQL to DGS processor.
-     *
-     * @param args Command line arguments in the format "--key=value". Expected arguments:
-     *             <ul>
-     *             <li>--schemaDir: Directory containing GraphQL schema files (*.graphqls)</li>
-     *             <li>--outputDir: Directory where generated Java files will be written</li>
-     *             <li>--packageName: Base package name for generated Java code</li>
-     *             </ul>
-     * @throws IOException If there's an error reading schema files or writing output files
-     */
+
+    private static String basePackage;
+
     public static void main(String[] args) throws IOException {
         Map<String, String> config = Arrays.stream(args)
                 .filter(arg -> arg.contains("="))
@@ -46,7 +28,7 @@ public class GraphQLToDgsProcessor {
 
         String schemaDir = config.get("schemaDir");
         String outputDir = config.get("outputDir");
-        String basePackage = config.get("packageName");
+        basePackage = config.get("packageName");
 
         File schemaDirFile = new File(schemaDir);
         if (!schemaDirFile.exists() || !schemaDirFile.isDirectory()) {
@@ -57,19 +39,97 @@ public class GraphQLToDgsProcessor {
         Files.walk(Paths.get(schemaDir))
                 .filter(Files::isRegularFile)
                 .filter(f -> f.toString().endsWith(".graphqls"))
-                .forEach(f -> processFile(f.toFile(), basePackage, outputDir));
+                .forEach(f -> processFile(f.toFile(), outputDir));
     }
 
-    /**
-     * Processes a single GraphQL schema file and generates a corresponding DGS data fetcher interface.
-     *
-     * @param file        The GraphQL schema file to process
-     * @param basePackage The base package name for the generated Java code
-     * @param outputDir   The directory where the generated Java file will be written
-     */
-    private static void processFile(File file, String basePackage, String outputDir) {
+    private static void generateClassForType(String packageName, String className, Map<String, String> fields, String outputDir) {
+        generateClassForType(packageName, className, fields, outputDir, null);
+    }
+
+    private static void generateClassForType(String packageName, String className, Map<String, String> fields, String outputDir, List<InputValueDefinition> inputValueDefs) {
+        TypeSpec.Builder classBuilder = TypeSpec.classBuilder(className)
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(ClassName.get("lombok", "Data"))
+                .addAnnotation(ClassName.get("lombok", "NoArgsConstructor"))
+                .addAnnotation(ClassName.get("lombok", "AllArgsConstructor"));
+
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            TypeName typeName = mapGraphQLTypeToTypeName(entry.getValue());
+            FieldSpec.Builder fieldBuilder = FieldSpec.builder(typeName, entry.getKey(), Modifier.PRIVATE);
+
+            // Add validation annotations if inputValueDefs are provided
+            if (inputValueDefs != null) {
+                InputValueDefinition inputValueDef = inputValueDefs.stream()
+                        .filter(ivd -> ivd.getName().equals(entry.getKey()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (inputValueDef != null) {
+                    // Add @NotNull for NonNullType fields
+                    if (inputValueDef.getType() instanceof NonNullType) {
+                        fieldBuilder.addAnnotation(ClassName.get("jakarta.validation.constraints", "NotNull"));
+                    }
+
+                    // Add validation annotations from directives
+                    addValidationAnnotationsToField(fieldBuilder, inputValueDef.getDirectives());
+                }
+            }
+
+            classBuilder.addField(fieldBuilder.build());
+        }
+
+        JavaFile javaFile = JavaFile.builder(packageName, classBuilder.build()).build();
+        try {
+            File outputPath = new File(outputDir);
+            if (!outputPath.exists()) {
+                outputPath.mkdirs();
+            }
+            javaFile.writeTo(Paths.get(outputDir));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static TypeName mapGraphQLTypeToTypeName(String type) {
+        return switch (type) {
+            case "String", "ID" -> ClassName.get(String.class);
+            case "Int" -> TypeName.INT;
+            case "Float" -> TypeName.DOUBLE;
+            case "Boolean" -> TypeName.BOOLEAN;
+            default -> ClassName.get(basePackage + ".types", type);
+        };
+    }
+
+
+    private static void processFile(File file, String outputDir) {
         String raw = readFile(file);
         Document doc = Parser.parse(raw);
+
+        doc.getDefinitions().stream()
+                .filter(def -> def instanceof ObjectTypeDefinition)
+                .map(def -> (ObjectTypeDefinition) def)
+                .filter(obj -> !obj.getName().equals("Query") && !obj.getName().equals("Mutation"))
+                .forEach(obj -> {
+                    Map<String, String> fields = obj.getFieldDefinitions().stream()
+                            .collect(Collectors.toMap(
+                                    FieldDefinition::getName,
+                                    fd -> mapGraphQLTypeToJava(fd.getType())
+                            ));
+                    generateClassForType(basePackage + ".types", obj.getName(), fields, outputDir);
+                });
+
+        doc.getDefinitions().stream()
+                .filter(def -> def instanceof InputObjectTypeDefinition)
+                .map(def -> (InputObjectTypeDefinition) def)
+                .forEach(inputObj -> {
+                    Map<String, String> fields = inputObj.getInputValueDefinitions().stream()
+                            .collect(Collectors.toMap(
+                                    InputValueDefinition::getName,
+                                    ivd -> mapGraphQLTypeToJava(ivd.getType())
+                            ));
+                    generateClassForType(basePackage + ".types", inputObj.getName(), fields, outputDir, inputObj.getInputValueDefinitions());
+                });
+
         String fetcherName = capitalize(file.getName().replace(".graphqls", "")) + "Fetcher";
 
         TypeSpec.Builder interfaceBuilder = TypeSpec.interfaceBuilder(fetcherName)
@@ -91,7 +151,7 @@ public class GraphQLToDgsProcessor {
             }
         }
 
-        JavaFile javaFile = JavaFile.builder(basePackage, interfaceBuilder.build()).build();
+        JavaFile javaFile = JavaFile.builder(basePackage + ".fetchers", interfaceBuilder.build()).build();
         try {
             File outputPath = new File(outputDir);
             if (!outputPath.exists()) {
@@ -101,6 +161,59 @@ public class GraphQLToDgsProcessor {
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+    }
+
+
+    private static String mapGraphQLTypeToJava(Type<?> gqlType) {
+        String rawType = unwrapTypeName(gqlType);
+        return switch (rawType) {
+            case "ID", "String" -> "String";
+            case "Int" -> "int";
+            case "Float" -> "double";
+            case "Boolean" -> "boolean";
+            default -> basePackage + ".types." + rawType;
+        };
+    }
+
+    private static MethodSpec generateMethod(FieldDefinition field, String annotation) {
+        MethodSpec.Builder builder = MethodSpec.methodBuilder(field.getName())
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .addAnnotation(ClassName.get("com.netflix.graphql.dgs", annotation));
+
+        List<InputValueDefinition> inputValueDefs = field.getInputValueDefinitions();
+        if (inputValueDefs != null && !inputValueDefs.isEmpty()) {
+            for (InputValueDefinition input : inputValueDefs) {
+                String argName = input.getName();
+                Type<?> gqlType = input.getType();
+                String rawType = unwrapTypeName(gqlType);
+
+                TypeName type = isPrimitive(rawType)
+                        ? mapPrimitive(rawType)
+                        : ClassName.get(basePackage + ".types", rawType);
+
+                ParameterSpec.Builder paramBuilder = ParameterSpec.builder(type, argName);
+
+                if (gqlType instanceof NonNullType) {
+                    paramBuilder.addAnnotation(ClassName.get("jakarta.validation.constraints", "NotNull"));
+                }
+
+                addValidationAnnotations(paramBuilder, input.getDirectives());
+
+                paramBuilder.addAnnotation(ClassName.get("com.netflix.graphql.dgs", "InputArgument"));
+
+                builder.addParameter(paramBuilder.build());
+            }
+        }
+
+        builder.addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "dfe");
+
+        String returnType = unwrapTypeName(field.getType());
+        TypeName returnJavaType = isPrimitive(returnType)
+                ? mapPrimitive(returnType)
+                : ClassName.get(basePackage + ".types", returnType);
+
+        builder.returns(returnJavaType);
+        return builder.build();
     }
 
     private static final Map<String, String> directiveToAnnotation = Map.ofEntries(
@@ -136,11 +249,9 @@ public class GraphQLToDgsProcessor {
 
             AnnotationSpec.Builder annBuilder = AnnotationSpec.builder(annClass);
 
-            // Handle annotation parameters from directive arguments
             for (Argument arg : directive.getArguments()) {
                 String paramName = arg.getName();
                 Value<?> val = arg.getValue();
-                // Support common types: StringValue, IntValue, BooleanValue
                 if (val instanceof StringValue s) {
                     annBuilder.addMember(paramName, "$S", s.getValue());
                 } else if (val instanceof IntValue i) {
@@ -154,65 +265,35 @@ public class GraphQLToDgsProcessor {
         }
     }
 
-    private static MethodSpec generateMethod(FieldDefinition field, String annotation) {
-        MethodSpec.Builder builder = MethodSpec.methodBuilder(field.getName())
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .addAnnotation(ClassName.get("com.netflix.graphql.dgs", annotation));
+    private static void addValidationAnnotationsToField(FieldSpec.Builder fieldBuilder, List<Directive> directives) {
+        for (Directive directive : directives) {
+            String dirName = directive.getName();
+            if (!directiveToAnnotation.containsKey(dirName)) continue;
+            String annName = directiveToAnnotation.get(dirName);
+            ClassName annClass = ClassName.get("jakarta.validation.constraints", annName);
 
-        List<InputValueDefinition> inputValueDefs = field.getInputValueDefinitions();
-        if (inputValueDefs != null && !inputValueDefs.isEmpty()) {
-            for (InputValueDefinition input : inputValueDefs) {
-                String argName = input.getName();
-                Type<?> gqlType = input.getType();
-                String rawType = unwrapTypeName(gqlType);
+            AnnotationSpec.Builder annBuilder = AnnotationSpec.builder(annClass);
 
-                TypeName type = isPrimitive(rawType)
-                        ? mapPrimitive(rawType)
-                        : ClassName.get("com.netflix.dgs.codegen.generated.types", rawType);
-
-                ParameterSpec.Builder paramBuilder = ParameterSpec.builder(type, argName);
-
-                if (gqlType instanceof NonNullType) {
-                    paramBuilder.addAnnotation(ClassName.get("jakarta.validation.constraints", "NotNull"));
+            for (Argument arg : directive.getArguments()) {
+                String paramName = arg.getName();
+                Value<?> val = arg.getValue();
+                if (val instanceof StringValue s) {
+                    annBuilder.addMember(paramName, "$S", s.getValue());
+                } else if (val instanceof IntValue i) {
+                    annBuilder.addMember(paramName, "$L", i.getValue());
+                } else if (val instanceof BooleanValue b) {
+                    annBuilder.addMember(paramName, "$L", b.isValue());
                 }
-
-                addValidationAnnotations(paramBuilder, input.getDirectives());
-
-                paramBuilder.addAnnotation(ClassName.get("com.netflix.graphql.dgs", "InputArgument"));
-
-                builder.addParameter(paramBuilder.build());
             }
+
+            fieldBuilder.addAnnotation(annBuilder.build());
         }
-
-        builder.addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "dfe");
-
-        String returnType = unwrapTypeName(field.getType());
-        TypeName returnJavaType = isPrimitive(returnType)
-                ? mapPrimitive(returnType)
-                : ClassName.get("com.netflix.dgs.codegen.generated.types", returnType);
-
-        builder.returns(returnJavaType);
-        return builder.build();
     }
 
-
-    /**
-     * Determines if a GraphQL type is a primitive type.
-     *
-     * @param type The GraphQL type name
-     * @return true if the type is a GraphQL primitive (String, ID, Int, Float, Boolean)
-     */
     private static boolean isPrimitive(String type) {
         return Set.of("String", "ID", "Int", "Float", "Boolean").contains(type);
     }
 
-    /**
-     * Extracts the base type name from a GraphQL type, handling non-null and list wrappers.
-     *
-     * @param type The GraphQL type
-     * @return The unwrapped type name as a string
-     * @throws IllegalArgumentException if the type is null or unrecognized
-     */
     private static String unwrapTypeName(Type<?> type) {
         return switch (type) {
             case NonNullType nonNull -> unwrapTypeName(nonNull.getType());
@@ -222,12 +303,6 @@ public class GraphQLToDgsProcessor {
         };
     }
 
-    /**
-     * Maps GraphQL primitive types to their corresponding Java types.
-     *
-     * @param type The GraphQL primitive type name
-     * @return The corresponding Java TypeName
-     */
     private static TypeName mapPrimitive(String type) {
         return switch (type) {
             case "ID", "String" -> ClassName.get(String.class);
@@ -238,23 +313,10 @@ public class GraphQLToDgsProcessor {
         };
     }
 
-    /**
-     * Capitalizes the first letter of a string.
-     *
-     * @param name The string to capitalize
-     * @return The capitalized string
-     */
     private static String capitalize(String name) {
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
-    /**
-     * Reads the contents of a file as a string.
-     *
-     * @param file The file to read
-     * @return The file contents as a string
-     * @throws RuntimeException if there's an error reading the file
-     */
     private static String readFile(File file) {
         try {
             return Files.readString(file.toPath());

@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * A Gradle plugin that generates Netflix DGS Framework data fetcher interfaces from GraphQL schema files.
  *
- * <p>This plugin creates a 'generateDgsFetchers' task that processes GraphQL schema files
+ * <p>This plugin creates a 'generateDgs' task that processes GraphQL schema files
  * and generates Java interfaces with appropriate DGS annotations that can be implemented
  * to create GraphQL resolvers.</p>
  *
@@ -22,7 +22,7 @@ import java.util.List;
  *     id 'com.aupma.codegen.graphql-to-dgs'
  * }
  *
- * dgsFetcherGen {
+ * dgsCodegen {
  *     schemaDir = "src/main/resources/schema"
  *     outputDir = "build/generated/sources/dgs-codegen"
  *     packageName = "com.example.graphql.fetchers"
@@ -33,7 +33,7 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
     /**
      * Applies this plugin to the given project.
      *
-     * <p>This method registers the 'dgsFetcherGen' extension and creates a 'generateDgsFetchers' task
+     * <p>This method registers the 'dgsCodegen' extension and creates a 'generateDgs' task
      * that generates DGS fetcher interfaces from GraphQL schema files. The task is automatically
      * executed as part of the 'build' task.</p>
      *
@@ -41,7 +41,57 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
      */
     @Override
     public void apply(Project project) {
-        project.getExtensions().create("dgsFetcherGen", DgsFetcherGenExtension.class);
+        project.getExtensions().create("dgsCodegen", DgsFetcherGenExtension.class);
+
+        // Add task to initialize base GraphQL schema file
+        project.getTasks().register(
+                "initDgsSchema", task -> {
+                    task.setGroup("dgsCodegen");
+                    task.setDescription("Create a base GraphQL schema file");
+
+                    task.doLast(t -> {
+                        DgsFetcherGenExtension config = project.getExtensions().getByType(DgsFetcherGenExtension.class);
+                        String schemaDir = config.getSchemaDir();
+                        java.io.File schemaDirFile = new java.io.File(schemaDir);
+
+                        if (!schemaDirFile.exists()) {
+                            schemaDirFile.mkdirs();
+                        }
+
+                        java.io.File baseSchemaFile = new java.io.File(schemaDirFile, "dgs.graphqls");
+
+                        if (!baseSchemaFile.exists()) {
+                            try {
+                                // Read template from resources
+                                java.io.InputStream templateStream = getClass().getClassLoader()
+                                        .getResourceAsStream("dgs.graphqls");
+                                if (templateStream == null) {
+                                    project.getLogger().error("Could not find template file: dgs.graphqls");
+                                    return;
+                                }
+
+                                String templateContent = new String(
+                                        templateStream.readAllBytes(),
+                                        java.nio.charset.StandardCharsets.UTF_8
+                                );
+                                templateStream.close();
+
+                                // Write template content to target file
+                                java.io.FileWriter writer = new java.io.FileWriter(baseSchemaFile);
+                                writer.write(templateContent);
+                                writer.close();
+                                project.getLogger()
+                                        .lifecycle("Created base GraphQL schema file at: " + baseSchemaFile.getAbsolutePath());
+                            } catch (java.io.IOException e) {
+                                project.getLogger().error("Failed to create base GraphQL schema file", e);
+                            }
+                        } else {
+                            project.getLogger()
+                                    .lifecycle("Base GraphQL schema file already exists at: " + baseSchemaFile.getAbsolutePath());
+                        }
+                    });
+                }
+        );
 
         project.afterEvaluate(_ -> {
             DgsFetcherGenExtension config = project.getExtensions().getByType(DgsFetcherGenExtension.class);
@@ -56,9 +106,9 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
 
             // Add a task using a generator classpath
             project.getTasks().register(
-                    "generateDgsFetchers", JavaExec.class, task -> {
-                        task.setGroup("dgsFetcherGen");
-                        task.setDescription("Generate DGS fetcher interfaces from GraphQL schema files");
+                    "generateDgs", JavaExec.class, task -> {
+                        task.setGroup("dgsCodegen");
+                        task.setDescription("Generate DGS java code from GraphQL schema files");
 
                         task.getMainClass().set("com.aupma.codegen.graphql.GraphQLToDgsProcessor");
                         task.setClasspath(generatorSourceSet.getRuntimeClasspath());
@@ -73,7 +123,7 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
 
             // Wire task before compileJava instead of build
             project.getTasks().named("compileJava").configure(compileTask ->
-                    compileTask.dependsOn("generateDgsFetchers")
+                    compileTask.dependsOn("generateDgs")
             );
 
             // Also add generated dir to the main sourceSet
