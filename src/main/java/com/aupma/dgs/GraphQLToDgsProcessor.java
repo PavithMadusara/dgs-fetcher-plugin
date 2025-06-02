@@ -1,4 +1,4 @@
-package com.aupma.codegen.dgs;
+package com.aupma.dgs;
 
 import com.palantir.javapoet.*;
 import com.palantir.javapoet.TypeName;

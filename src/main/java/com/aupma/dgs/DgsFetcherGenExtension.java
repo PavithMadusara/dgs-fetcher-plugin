@@ -1,4 +1,4 @@
-package com.aupma.codegen.dgs;
+package com.aupma.dgs;
 
 /**
  * Extension for configuring the GraphQL to DGS fetcher generation.

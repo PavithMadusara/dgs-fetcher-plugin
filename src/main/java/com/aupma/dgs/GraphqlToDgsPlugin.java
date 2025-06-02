@@ -1,4 +1,4 @@
-package com.aupma.codegen.dgs;
+package com.aupma.dgs;
 
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;

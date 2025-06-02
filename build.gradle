@@ -4,8 +4,8 @@ plugins {
     id 'maven-publish'
 }
 
-group = 'com.aupma.codegen'
-version = '0.2.0'
+group = 'com.aupma'
+version = '0.2.1'
 
 repositories {
     mavenCentral()
@@ -22,7 +22,7 @@ publishing {
         mavenLocal()
         maven {
             name = 'GitHubPackages'
-            url = uri("https://maven.pkg.github.com/pavithmadusara/dgs-codegen-plugin")
+            url = uri("https://maven.pkg.github.com/aupma/dgs-codegen-plugin")
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
