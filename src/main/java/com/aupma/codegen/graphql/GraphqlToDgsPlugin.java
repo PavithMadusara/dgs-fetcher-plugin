@@ -9,36 +9,7 @@ import org.gradle.api.tasks.SourceSetContainer;
 
 import java.util.List;
 
-/**
- * A Gradle plugin that generates Netflix DGS Framework data fetcher interfaces from GraphQL schema files.
- *
- * <p>This plugin creates a 'generateDgs' task that processes GraphQL schema files
- * and generates Java interfaces with appropriate DGS annotations that can be implemented
- * to create GraphQL resolvers.</p>
- *
- * <p>Example usage in build.gradle:</p>
- * <pre>
- * plugins {
- *     id 'com.aupma.codegen.graphql-to-dgs'
- * }
- *
- * dgsCodegen {
- *     schemaDir = "src/main/resources/schema"
- *     outputDir = "build/generated/sources/dgs-codegen"
- *     packageName = "com.example.graphql.fetchers"
- * }
- * </pre>
- */
 public class GraphqlToDgsPlugin implements Plugin<Project> {
-    /**
-     * Applies this plugin to the given project.
-     *
-     * <p>This method registers the 'dgsCodegen' extension and creates a 'generateDgs' task
-     * that generates DGS fetcher interfaces from GraphQL schema files. The task is automatically
-     * executed as part of the 'build' task.</p>
-     *
-     * @param project The project to which this plugin is applied
-     */
     @Override
     public void apply(Project project) {
         project.getExtensions().create("dgsCodegen", DgsFetcherGenExtension.class);
