@@ -82,7 +82,7 @@ public class GraphqlToDgsPlugin implements Plugin<Project> {
                         task.setGroup("dgsCodegen");
                         task.setDescription("Generate DGS java code from GraphQL schema files");
 
-                        task.getMainClass().set("com.aupma.codegen.dgs.GraphQLToDgsProcessor");
+                        task.getMainClass().set("com.aupma.dgs.GraphQLToDgsProcessor");
                         task.setClasspath(generatorSourceSet.getRuntimeClasspath());
 
                         task.getArgumentProviders().add(() -> {
