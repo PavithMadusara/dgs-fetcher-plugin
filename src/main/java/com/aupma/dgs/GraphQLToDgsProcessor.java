@@ -143,6 +143,13 @@ public class GraphQLToDgsProcessor {
                     generateClassForType(basePackage + ".types", inputObj.getName(), fields, outputDir, inputObj.getInputValueDefinitions());
                 });
 
+        doc.getDefinitions().stream()
+                .filter(def -> def instanceof EnumTypeDefinition)
+                .map(def -> (EnumTypeDefinition) def)
+                .forEach(enumDef -> {
+                    generateEnumForType(basePackage + ".types", enumDef.getName(), enumDef.getEnumValueDefinitions(), outputDir);
+                });
+
         String fetcherName = capitalize(file.getName().replace(".graphqls", "")) + "Fetcher";
 
         TypeSpec.Builder interfaceBuilder = TypeSpec.interfaceBuilder(fetcherName)
@@ -227,6 +234,26 @@ public class GraphQLToDgsProcessor {
 
         builder.returns(returnJavaType);
         return builder.build();
+    }
+
+    private static void generateEnumForType(String packageName, String enumName, List<EnumValueDefinition> enumValues, String outputDir) {
+        TypeSpec.Builder enumBuilder = TypeSpec.enumBuilder(enumName)
+                .addModifiers(Modifier.PUBLIC);
+
+        for (EnumValueDefinition enumVal : enumValues) {
+            enumBuilder.addEnumConstant(enumVal.getName());
+        }
+
+        JavaFile javaFile = JavaFile.builder(packageName, enumBuilder.build()).build();
+        try {
+            File outputPath = new File(outputDir);
+            if (!outputPath.exists()) {
+                outputPath.mkdirs();
+            }
+            javaFile.writeTo(Paths.get(outputDir));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static final Map<String, String> directiveToAnnotation = Map.ofEntries(
